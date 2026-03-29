@@ -79,16 +79,25 @@ Configuration can be set via environment variables or `.env` file:
 | `PORT` | No | `3000` | Server port |
 | `REASONING_MODEL` | No | (uses request model) | Model to use when extended thinking is enabled** |
 | `COMPLETION_MODEL` | No | (uses request model) | Model to use for standard requests (no thinking)** |
+| `ANTHROPIC_PROXY_UPSTREAM_HEADERS` | No | - | Extra headers to send to upstream (see below) |
 | `DEBUG` | No | `false` | Enable debug logging (`1` or `true`) |
 | `VERBOSE` | No | `false` | Enable verbose logging (`1` or `true`) |
 
-\* Required if your upstream endpoint needs authentication  
+\* Required if your upstream endpoint needs authentication
 \*\* The proxy automatically detects when a request has extended thinking enabled (via the `thinking` parameter in the request) and routes it to `REASONING_MODEL`. Standard requests without thinking use `COMPLETION_MODEL`. This allows you to use more powerful models for reasoning tasks and faster/cheaper models for simple completions. If not set, the model from the client request is used.
 
 `UPSTREAM_BASE_URL` accepts any of these forms:
 - Service base URL: `https://api.openai.com` -> `/v1/chat/completions`
 - Versioned base URL: `https://gateway.company.internal/v2` -> `/v2/chat/completions`
 - Full endpoint: `https://gateway.company.internal/v2/chat/completions`
+
+`ANTHROPIC_PROXY_UPSTREAM_HEADERS` allows injecting extra HTTP headers into every upstream request. Entries are separated by `;` or newlines, with `=` or `:` as key-value delimiters:
+
+```bash
+ANTHROPIC_PROXY_UPSTREAM_HEADERS="x-tenant=my-team;x-trace-id=req-123"
+```
+
+If `UPSTREAM_API_KEY` is set, an `Authorization: Bearer <key>` header is added automatically — unless `ANTHROPIC_PROXY_UPSTREAM_HEADERS` already includes an `Authorization` header, in which case the explicit header takes precedence.
 
 ### Configuration File Locations
 
@@ -156,6 +165,21 @@ UPSTREAM_BASE_URL=https://openrouter.ai/api \
 
 # This allows cost optimization: use powerful models for complex reasoning,
 # and faster/cheaper models for simple completions
+```
+
+### With Custom Upstream Headers
+
+```bash
+# Inject extra headers into every upstream request
+UPSTREAM_BASE_URL=https://gateway.company.internal/v2 \
+  UPSTREAM_API_KEY=sk-... \
+  ANTHROPIC_PROXY_UPSTREAM_HEADERS="x-tenant=my-team;x-trace-id=req-123" \
+  anthropic-proxy
+
+# Override the Authorization header entirely
+UPSTREAM_BASE_URL=https://openrouter.ai/api \
+  ANTHROPIC_PROXY_UPSTREAM_HEADERS="authorization: Bearer my-custom-token" \
+  anthropic-proxy
 ```
 
 ### Running as Daemon

@@ -1,5 +1,8 @@
 use anyhow::{bail, Result};
-use reqwest::Url;
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Url,
+};
 use std::{env, path::PathBuf};
 
 #[derive(Debug, Clone)]
@@ -7,6 +10,7 @@ pub struct Config {
     pub port: u16,
     pub base_url: String,
     pub api_key: Option<String>,
+    pub upstream_headers: HeaderMap,
     pub reasoning_model: Option<String>,
     pub completion_model: Option<String>,
     pub debug: bool,
@@ -86,6 +90,12 @@ impl Config {
             .ok()
             .filter(|k| !k.is_empty());
 
+        let upstream_headers = env::var("ANTHROPIC_PROXY_UPSTREAM_HEADERS")
+            .ok()
+            .map(|value| Self::parse_upstream_headers(&value))
+            .transpose()?
+            .unwrap_or_default();
+
         let reasoning_model = env::var("REASONING_MODEL").ok();
         let completion_model = env::var("COMPLETION_MODEL").ok();
 
@@ -101,6 +111,7 @@ impl Config {
             port,
             base_url,
             api_key,
+            upstream_headers,
             reasoning_model,
             completion_model,
             debug,
@@ -172,11 +183,57 @@ impl Config {
         version
             .is_some_and(|value| !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()))
     }
+
+    pub fn parse_upstream_headers(value: &str) -> Result<HeaderMap> {
+        let mut headers = HeaderMap::new();
+
+        for entry in value
+            .split(|ch| ch == ';' || ch == '\n')
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+        {
+            let (name, raw_value) = entry
+                .split_once('=')
+                .or_else(|| entry.split_once(':'))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Invalid ANTHROPIC_PROXY_UPSTREAM_HEADERS entry '{}'. Expected Header=Value",
+                        entry
+                    )
+                })?;
+
+            let name = name.trim();
+            let value = raw_value.trim();
+
+            if name.is_empty() || value.is_empty() {
+                bail!(
+                    "Invalid ANTHROPIC_PROXY_UPSTREAM_HEADERS entry '{}'. Header name and value must be non-empty",
+                    entry
+                );
+            }
+
+            let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|err| {
+                anyhow::anyhow!("Invalid upstream header name '{}': {}", name, err)
+            })?;
+            let header_value = HeaderValue::from_str(value).map_err(|err| {
+                anyhow::anyhow!(
+                    "Invalid upstream header value for '{}': {}",
+                    header_name.as_str(),
+                    err
+                )
+            })?;
+
+            headers.insert(header_name, header_value);
+        }
+
+        Ok(headers)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Config;
+    use reqwest::header::AUTHORIZATION;
 
     #[test]
     fn base_url_without_version_defaults_to_v1_endpoint() {
@@ -215,5 +272,24 @@ mod tests {
         assert!(err
             .to_string()
             .contains("must not include query parameters or fragments"));
+    }
+
+    #[test]
+    fn parse_upstream_headers_supports_semicolons_newlines_and_colons() {
+        let headers = Config::parse_upstream_headers(
+            "x-tenant=asimov;authorization: Bearer test\nx-trace-id=req-1",
+        )
+        .unwrap();
+
+        assert_eq!(headers.get("x-tenant").unwrap(), "asimov");
+        assert_eq!(headers.get(AUTHORIZATION).unwrap(), "Bearer test");
+        assert_eq!(headers.get("x-trace-id").unwrap(), "req-1");
+    }
+
+    #[test]
+    fn parse_upstream_headers_rejects_invalid_entries() {
+        let err = Config::parse_upstream_headers("missing-separator").unwrap_err();
+
+        assert!(err.to_string().contains("Expected Header=Value"));
     }
 }

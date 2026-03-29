@@ -116,6 +116,10 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
     } else {
         tracing::info!("API Key: not set (using unauthenticated endpoint)");
     }
+    if !config.upstream_headers.is_empty() {
+        let header_names: Vec<_> = config.upstream_headers.keys().map(|k| k.as_str()).collect();
+        tracing::info!("Upstream Headers: {}", header_names.join(", "));
+    }
 
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(300))

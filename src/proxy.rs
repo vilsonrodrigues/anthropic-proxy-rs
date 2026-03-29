@@ -10,7 +10,7 @@ use axum::{
 };
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
-use reqwest::Client;
+use reqwest::{header::AUTHORIZATION, Client, RequestBuilder};
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -57,14 +57,10 @@ async fn handle_non_streaming(
     tracing::debug!("Sending non-streaming request to {}", url);
     tracing::debug!("Request model: {}", openai_req.model);
 
-    let mut req_builder = client
-        .post(&url)
-        .json(&openai_req)
-        .timeout(Duration::from_secs(300));
-
-    if let Some(api_key) = &config.api_key {
-        req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
-    }
+    let req_builder = apply_upstream_headers(
+        client.post(&url).json(&openai_req).timeout(Duration::from_secs(300)),
+        &config,
+    );
 
     let response = req_builder.send().await.map_err(|err| {
         tracing::error!("Failed to send non-streaming request to {}: {:?}", url, err);
@@ -114,14 +110,10 @@ async fn handle_streaming(
     tracing::debug!("Sending streaming request to {}", url);
     tracing::debug!("Request model: {}", openai_req.model);
 
-    let mut req_builder = client
-        .post(&url)
-        .json(&openai_req)
-        .timeout(Duration::from_secs(300));
-
-    if let Some(api_key) = &config.api_key {
-        req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
-    }
+    let req_builder = apply_upstream_headers(
+        client.post(&url).json(&openai_req).timeout(Duration::from_secs(300)),
+        &config,
+    );
 
     let response = req_builder.send().await.map_err(|err| {
         tracing::error!("Failed to send streaming request to {}: {:?}", url, err);
@@ -416,4 +408,18 @@ fn create_sse_stream(
             }
         }
     }
+}
+
+fn apply_upstream_headers(mut req_builder: RequestBuilder, config: &Config) -> RequestBuilder {
+    if !config.upstream_headers.is_empty() {
+        req_builder = req_builder.headers(config.upstream_headers.clone());
+    }
+
+    if let Some(api_key) = &config.api_key {
+        if !config.upstream_headers.contains_key(AUTHORIZATION) {
+            req_builder = req_builder.header(AUTHORIZATION, format!("Bearer {}", api_key));
+        }
+    }
+
+    req_builder
 }

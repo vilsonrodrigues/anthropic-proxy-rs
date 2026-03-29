@@ -99,6 +99,25 @@ ANTHROPIC_PROXY_UPSTREAM_HEADERS="x-tenant=my-team;x-trace-id=req-123"
 
 If `UPSTREAM_API_KEY` is set, an `Authorization: Bearer <key>` header is added automatically — unless `ANTHROPIC_PROXY_UPSTREAM_HEADERS` already includes an `Authorization` header, in which case the explicit header takes precedence.
 
+#### Request Tracing Headers
+
+Each proxied request gets an `x-request-id` response header (auto-generated if the client does not provide one). The following headers are forwarded upstream when present in the incoming request:
+
+| Header | Description |
+|--------|-------------|
+| `x-request-id` | Unique request identifier (auto-generated if missing) |
+| `x-correlation-id` | Correlation ID for distributed tracing |
+| `traceparent` | W3C Trace Context propagation |
+
+Claude Code can send these headers via `ANTHROPIC_CUSTOM_HEADERS`:
+
+```bash
+ANTHROPIC_BASE_URL=http://127.0.0.1:3000 \
+  ANTHROPIC_API_KEY=dummy \
+  ANTHROPIC_CUSTOM_HEADERS=$'x-correlation-id: corp-trace-123' \
+  claude -p "Hello"
+```
+
 ### Configuration File Locations
 
 The proxy searches for `.env` files in the following order:

@@ -5,7 +5,7 @@ mod models;
 mod proxy;
 mod transform;
 
-use axum::{routing::post, Extension, Router};
+use axum::{middleware, routing::post, Extension, Router};
 use clap::Parser;
 use cli::{Cli, Command};
 use config::Config;
@@ -139,6 +139,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         .route("/health", axum::routing::get(health_handler))
         .layer(Extension(config.clone()))
         .layer(Extension(client))
+        .layer(middleware::from_fn(proxy::request_context_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(cors);
 
